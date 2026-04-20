@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; case \"$filepath\" in *.js|*.ts|*.py|*.go|*.rs|*.json|*.md) npx prettier --write \"$filepath\" 2>/dev/null ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; case \"$filepath\" in */src/controllers/*|*/src/routes/*|*/src/handlers/*) echo 'REMINDER: Controller/route/handler edited. Verify input validation, auth, permission check, and corresponding test.' ;; esac; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in */.env|*/.env.*) echo 'BLOCKED: .env files contain secrets and should not be edited by Claude. Ask the user to edit manually.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *'git push'*|*'git commit'*) echo 'BLOCKED: Git commit/push should be done by the SRE agent or a human.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

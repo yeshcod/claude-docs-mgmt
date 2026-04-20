@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PROJECT_DIR=\"${CLAUDE_PROJECT_DIR:-$PWD}\"; SKIP_MARKER=\"$PROJECT_DIR/.claude/.docs-sync-skip\"; if [ -f \"$SKIP_MARKER\" ]; then rm -f \"$SKIP_MARKER\"; exit 0; fi; if [ ! -d \"$PROJECT_DIR/.claude/docs\" ]; then exit 0; fi; DIRTY=\"$(git -C \"$PROJECT_DIR\" status --porcelain 2>/dev/null)\"; if [ -z \"$DIRTY\" ]; then exit 0; fi; echo 'BLOCKED: Working tree is dirty and this project uses the claude-docs-mgmt framework (.claude/docs/ exists). Run /docs-sync first to capture session learnings + audit docs, then re-issue /compact. To skip this once (e.g. discarding WIP), run: touch .claude/.docs-sync-skip && /compact' >&2; exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}

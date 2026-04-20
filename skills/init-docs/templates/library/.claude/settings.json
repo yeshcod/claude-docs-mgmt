@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; case \"$filepath\" in *.js|*.ts|*.jsx|*.tsx|*.py|*.rs|*.go|*.json|*.md) npx prettier --write \"$filepath\" 2>/dev/null ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; case \"$filepath\" in */src/index.*) echo 'REMINDER: Public barrel edited. Update .claude/docs/api-surface.md if exports changed.' ;; esac; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *'npm publish'*|*'yarn publish'*|*'pnpm publish'*|*'twine upload'*|*'cargo publish'*) echo 'BLOCKED: Package publish must be done by CI on tag push, not by Claude.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *'git push'*|*'git commit'*) echo 'BLOCKED: Git commit/push should be done by the SRE agent or a human.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

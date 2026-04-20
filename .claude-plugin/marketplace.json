@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-docs-mgmt",
+  "description": "Self-contained marketplace for the claude-docs-mgmt plugin — documentation audit + project bootstrap.",
+  "owner": {
+    "name": "Egor Shakala",
+    "email": "e.a.shakala@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "claude-docs-mgmt",
+      "description": "Session-end documentation audit (/docs-sync), new-project doc framework (/init-docs), and a PreCompact guard that blocks /compact on a dirty tree until docs are synced.",
+      "category": "productivity",
+      "source": ".",
+      "homepage": "https://github.com/yeshcod/claude-docs-mgmt"
+    }
+  ]
+}

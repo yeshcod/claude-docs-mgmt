@@ -1,0 +1,57 @@
+{
+  "permissions": {
+    "allow": [],
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; case \"$filepath\" in *.js|*.jsx|*.ts|*.tsx|*.dart|*.swift|*.kt|*.json|*.md) npx prettier --write \"$filepath\" 2>/dev/null ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "filepath=\"$CLAUDE_FILE_PATH\"; case \"$filepath\" in */src/screens/*|*/src/components/*|*/lib/*|*/ios/*|*/android/*) echo 'REMINDER: UI / platform code edited. Verify on BOTH iOS and Android (at least one device each) before ship.' ;; esac; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in */.env|*/.env.*|*/GoogleService-Info.plist|*/google-services.json) echo 'BLOCKED: secrets / service config should not be edited by Claude. Ask the user to edit manually.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *'fastlane'*|*'xcodebuild'*' archive'*|*'gradlew'*'bundleRelease'*|*'eas build'*|*'eas submit'*) echo 'BLOCKED: App build / submission must be done by CI, not by Claude.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_TOOL_INPUT\" in *'git push'*|*'git commit'*) echo 'BLOCKED: Git commit/push should be done by the SRE agent or a human.' >&2; exit 1 ;; esac; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

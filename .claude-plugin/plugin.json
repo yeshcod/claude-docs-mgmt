@@ -1,7 +1,7 @@
 {
   "name": "claude-docs-mgmt",
-  "description": "Session-end documentation audit + new-project doc framework. /docs-sync captures session learnings into .claude/docs + BUGS.md + TEST_CASES.md, audits for drift. /init-docs scaffolds a doc framework for a new project (4 profiles: fullstack-web, backend-only, library, mobile). Includes a PreCompact hook that blocks /compact on a dirty tree until docs are synced.",
-  "version": "0.1.0",
+  "description": "Opinionated project framework for Claude Code: bootstraps a project's docs (CLAUDE.md, BUGS, TEST_CASES, ROADMAP, .claude/docs/), ships a code-standards.md with modularity / TDD / anti-overengineering rules, audits docs for drift via /docs-sync, blocks /compact on a dirty tree until docs are synced.",
+  "version": "0.2.0",
   "author": {
     "name": "Egor Shakala",
     "email": "e.a.shakala@gmail.com"
@@ -9,5 +9,14 @@
   "homepage": "https://github.com/yeshcod/claude-docs-mgmt",
   "repository": "https://github.com/yeshcod/claude-docs-mgmt.git",
   "license": "MIT",
-  "keywords": ["documentation", "memory", "claude-md", "audit", "bootstrap"]
+  "keywords": [
+    "documentation",
+    "code-standards",
+    "best-practices",
+    "tdd",
+    "claude-md",
+    "audit",
+    "bootstrap",
+    "project-template"
+  ]
 }

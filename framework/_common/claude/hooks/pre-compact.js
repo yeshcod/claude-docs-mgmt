@@ -25,9 +25,21 @@ const {
         try {
           dirty = execSync(`git -C "${PROJECT_DIR}" status --porcelain`, { encoding: 'utf8' });
         } catch {}
-        if (dirty.trim()) {
+        // Filter out runtime artefacts the framework itself writes — sessions,
+        // learned pitfalls, state. These are dirty every turn because hooks
+        // append to them; blocking on them would be self-inflicted deadlock.
+        const RUNTIME_PREFIXES = ['.claude/sessions/', '.claude/learned/', '.claude/state/'];
+        const relevantDirty = dirty
+          .split('\n')
+          .filter((line) => line.trim().length > 0)
+          .filter((line) => {
+            const file = line.slice(3).split(' -> ').pop().trim();
+            return !RUNTIME_PREFIXES.some((p) => file.startsWith(p));
+          });
+        if (relevantDirty.length > 0) {
           process.stderr.write(
             `BLOCKED: dirty working tree with .claude/docs/ framework present.\n` +
+            `Files (excluding hook runtime artefacts):\n${relevantDirty.map((l) => '  ' + l).join('\n')}\n` +
             `Run a docs-sync pass (route changes per .claude/docs/processes.md "Documentation Maintenance Rule"),\n` +
             `or one-shot bypass: touch .claude/.docs-sync-skip && /compact\n`,
           );

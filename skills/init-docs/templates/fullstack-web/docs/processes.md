@@ -2,6 +2,8 @@
 
 Single source of truth for HOW we work. If anything about process or doc-maintenance is unclear, this file wins over agent prompts and skill docs.
 
+> **Code style, modularity, TDD discipline, and project cleanliness** live in [code-standards.md](code-standards.md). This file is about *process* — how we work. That one is about *code* — what we write.
+
 ## Context Maintenance Rule (CRITICAL)
 
 **Every 3–5 user requests/responses**, check whether context (`CLAUDE.md`, `BUGS.md`, `TEST_CASES.md`, `.claude/docs/*`) still matches what was just done. If anything changed, proactively offer to update — show a diff/summary of what would change before applying.

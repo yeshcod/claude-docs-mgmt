@@ -57,7 +57,9 @@ Escape hatch: `touch .claude/.docs-sync-skip && /compact` — one-shot skip for 
 
 ## Profiles
 
-All profiles include: `CLAUDE.md`, `BUGS.md`, `TEST_CASES.md`, `ROADMAP.md`, `.claude/docs/processes.md`, `.claude/docs/changelog.md`, `.claude/docs/adr/` (ADR template), `.claude/docs/prd/` (PRD template).
+All profiles include:
+- **Root**: `CLAUDE.md`, `BUGS.md`, `TEST_CASES.md`, `ROADMAP.md`
+- **`.claude/docs/`**: `processes.md` (how we work — Documentation Maintenance Rule, Definition of Done, two-mode dev process), `code-standards.md` (how we write code — modularity, atomicity, naming, TDD discipline, project cleanliness, anti-overengineering), `changelog.md`, `adr/` (ADR template + index), `prd/` (PRD template + index)
 
 | Profile | Adds |
 |---|---|
@@ -74,6 +76,8 @@ All profiles include: `CLAUDE.md`, `BUGS.md`, `TEST_CASES.md`, `ROADMAP.md`, `.c
 - **Code-derivable ≠ doc**. If `grep` answers it, don't write it down.
 - **Memory ≠ project docs**. Facts about the user belong in `~/.claude/projects/<project>/memory/`, NOT in `.claude/docs/`.
 - **Additive only**. Fields/rules are marked dormant, not deleted. Preserves rollback.
+- **Process and code-style live separately**. `processes.md` is about *how we work*; `code-standards.md` is about *what we write*. Mixing them rots both — a teammate skimming for "how do I write a test" shouldn't have to scroll past "how does PR review work."
+- **Ship opinions, not blanks**. The templates have real defaults (modularity, TDD, anti-overengineering). They're meant to be amended, not stared at — your first PR after `/init-docs` should trim the rules you don't agree with.
 
 ## License
 

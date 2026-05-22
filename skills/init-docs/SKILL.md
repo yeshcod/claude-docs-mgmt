@@ -65,7 +65,11 @@ For each template file:
    - `{{YEAR}}` → YYYY
 3. Write to the corresponding path under the project root (strip the `templates/<profile>/` prefix).
 
-Also copy files from `templates/_common/` (shared ADR + PRD templates). These go into `.claude/docs/adr/` and `.claude/docs/prd/` regardless of profile.
+Also copy files from `templates/_common/` (shared across all profiles):
+
+- `_common/adr/*` → `.claude/docs/adr/`
+- `_common/prd/*` → `.claude/docs/prd/`
+- `_common/code-standards.md` → `.claude/docs/code-standards.md` (the project-cleanliness + code-style + TDD + reusability rulebook — every profile gets the same one)
 
 ### Phase 4 — Hooks + gitignore
 
@@ -98,6 +102,7 @@ Created:
   TEST_CASES.md
   ROADMAP.md
   .claude/docs/processes.md
+  .claude/docs/code-standards.md
   .claude/docs/architecture.md
   <... full list ...>
   .claude/docs/adr/ADR-000-template.md
@@ -108,9 +113,10 @@ Created:
 Next steps:
   1. Fill in CLAUDE.md Critical Rules (the template has placeholders).
   2. Customize .claude/docs/processes.md Documentation Maintenance Rule table — /docs-sync reads it.
-  3. First ADR: decide what architectural choices are worth recording.
-  4. Wire CI if you want — examples in .claude/docs/deploy.md (if profile included it).
-  5. Commit the scaffold: git add . && git commit -m "docs: bootstrap claude-docs-mgmt framework (<profile>)"
+  3. Skim .claude/docs/code-standards.md — these are the defaults that ship; trim / amend the rules your team doesn't agree with before you commit.
+  4. First ADR: decide what architectural choices are worth recording.
+  5. Wire CI if you want — examples in .claude/docs/deploy.md (if profile included it).
+  6. Commit the scaffold: git add . && git commit -m "docs: bootstrap claude-docs-mgmt framework (<profile>)"
 ```
 
 ## Rules & guardrails

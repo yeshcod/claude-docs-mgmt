@@ -2,6 +2,8 @@
 
 Single source of truth for how we develop this library.
 
+> **Code style, modularity, TDD discipline, and project cleanliness** live in [code-standards.md](code-standards.md). This file is about *process* — how we work. That one is about *code* — what we write.
+
 ## Documentation Maintenance Rule (CRITICAL)
 
 Every decision that changes the library MUST land in the right document in the same session.

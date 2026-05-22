@@ -1,155 +1,176 @@
 # claude-docs-mgmt
 
-**Opinionated project framework for Claude Code.** Bootstraps a project's
-docs, ships defaults for *how to write code*, audits docs for drift, and
-gates `/compact` until your docs reflect the session.
+**Set-and-forget docs + memory framework for Claude Code projects.**
+Hook-driven, zero dependencies, copied into your repo by an install
+script. No plugin marketplace, no slash commands — everything runs
+through hooks the moment you open Claude Code in the project.
 
-Three components, two skills, one hook:
+> **Breaking change in 1.0.0.** This used to be a Claude Code plugin with
+> `/init-docs` and `/docs-sync` slash commands. It is now a vendored
+> framework you copy into your repo. The plugin format is gone. If you
+> were on 0.x, see [Migration from 0.x](#migration-from-0x) below.
 
-- **`/init-docs`** — bootstrap a new project. Asks for a profile
-  (`fullstack-web` / `backend-only` / `library` / `mobile`) + stack
-  details, renders templates: `CLAUDE.md`, `BUGS.md`, `TEST_CASES.md`,
-  `ROADMAP.md`, `.claude/docs/processes.md`, `.claude/docs/code-standards.md`,
-  `.claude/docs/{architecture,entities,backend,frontend-gotchas,…}.md`,
-  ADR + PRD templates.
-- **`/docs-sync`** — session-end audit. Scans `git status` + the
-  conversation, routes new learnings into the right doc per the project's
-  `processes.md`, audits existing docs for drift / duplication / stale
-  point-in-time counts, proposes a diff, applies on approval.
-- **PreCompact hook** — blocks `/compact` on a dirty tree when the
-  project uses this framework, forcing a `/docs-sync` round-trip before
-  context is lost.
+## What you get
 
-What makes the framework opinionated: every project ships with
-**`.claude/docs/code-standards.md`** — a 10-section rulebook covering
-project cleanliness, modularity, atomicity, naming, TDD discipline,
-error handling at boundaries, refactor discipline, and anti-overengineering.
-Trim what you don't agree with after install, but you don't start from a
-blank file.
+After running `install.js` against your project:
+
+```
+<your project>/
+├── CLAUDE.md                    # orientation, Critical Rules, pointers
+├── BUGS.md                      # Open / Fixed (ID format, severity, templates)
+├── TEST_CASES.md                # TC registry (P0/P1/P2, AUTO-BE/AUTO-FE/MANUAL)
+├── ROADMAP.md                   # waves, parallel tracks, WONTFIX
+├── test-cases/                  # per-feature manual test case files
+└── .claude/
+    ├── settings.json            # hook bindings
+    ├── hooks/                   # 7 Node 18+ scripts, zero deps
+    │   ├── _shared.js           # parseTranscript, detectPitfalls, etc.
+    │   ├── session-start.js     # inject context, recurring-pitfall alerts, reflect reminder
+    │   ├── session-end.js       # final snapshot, prune to newest 30
+    │   ├── pre-compact.js       # snapshot + pitfall detect + dirty-tree gate
+    │   ├── pre-tool-use.js      # block secret-file edits + catastrophic rm
+    │   ├── post-tool-use.js     # project-specific nudges (you customise)
+    │   └── user-prompt-submit.js # mid-session checkpoint every 20 msgs + memory-sync
+    ├── docs/                    # the documentation framework
+    │   ├── processes.md         # ★ how we work — Documentation Maintenance Rule, DoD, two-mode dev
+    │   ├── code-standards.md    # ★ what we write — modularity, atomicity, TDD, anti-overengineering
+    │   ├── architecture.md, entities.md, backend.md, ... (profile-dependent)
+    │   ├── changelog.md
+    │   ├── adr/                 # Architecture Decision Records (template + index)
+    │   ├── prd/                 # Product Requirements Docs (template + index)
+    │   └── domain/              # glossary, workflows
+    ├── memory/                  # active project memory
+    │   ├── MEMORY.md            # pointer-only index (≤200 lines)
+    │   ├── current.md           # what we're doing right now (injected by session-start)
+    │   └── todo-status.md       # open / done checklist
+    ├── sessions/                # auto-captured by hooks (every 20 msgs, on compact, on session end)
+    ├── learned/                 # auto-pitfall-YYYYMMDD.md from error→fix patterns
+    └── state/                   # runtime state for hooks (gitignored)
+```
+
+Plus an appended `.gitignore` snippet that excludes `.claude/state/*.json`
+and the one-shot `.claude/.docs-sync-skip` marker.
 
 ## Install
 
 ```bash
-# Via marketplace (recommended — easy update path)
-/plugin marketplace add https://github.com/yeshcod/claude-docs-mgmt.git
-/plugin install claude-docs-mgmt@claude-docs-mgmt
+# 1. Clone the framework somewhere
+git clone https://github.com/yeshcod/claude-docs-mgmt.git ~/code/claude-docs-mgmt
 
-# Or directly (no marketplace tracking)
-/plugin install https://github.com/yeshcod/claude-docs-mgmt.git
+# 2. Run the installer pointed at your project
+cd ~/code/your-project
+node ~/code/claude-docs-mgmt/install.js
+
+# Options:
+#   --profile fullstack-web (default) | backend-only | library | mobile
+#   --target /path/to/project           # default: cwd
+#   --project-name "Acme ERP"           # override auto-detect (basename / package.json / git remote)
+#   --force                             # overwrite existing files (default: skip)
+#   --dry-run                           # print what would happen
+#   --help
 ```
 
-Restart Claude Code. `/init-docs` and `/docs-sync` become available
-globally.
+Then restart Claude Code in that project so hooks pick up.
 
-## How it works
+## How it works — hooks, not commands
 
-### `/init-docs` (new project bootstrap)
+All automation runs through Claude Code's hook system. You never type a
+slash command for docs / memory work.
 
-Run in an empty repo or one without `.claude/docs/`. Workflow:
+| Event | Hook | What it does |
+|---|---|---|
+| `SessionStart` | `session-start.js` | Injects `memory/current.md`, pending handoffs, the newest session snapshot, recent pitfalls, recurring-pitfall alerts ("you hit this 3+ days running — promote to a CLAUDE.md rule"), reflect reminder, docs-framework presence. |
+| `UserPromptSubmit` | `user-prompt-submit.js` | Every 20 messages: mid-session checkpoint into `sessions/`. Also surfaces `MEMORY.md` diffs and new handoffs to the assistant. |
+| `PreToolUse` (Edit/Write/Bash) | `pre-tool-use.js` | Blocks edits to secret-looking files (`.env`, `*.pem`, `*credentials*`). Blocks catastrophic `rm -rf /`, `rm -rf ~`, `rm -rf /etc` etc. — narrowly, no false positives on `rm -rf /tmp/x`. |
+| `PostToolUse` (Edit/Write) | `post-tool-use.js` | **You customise this file** with per-path nudges for your project layout. The default is silent. |
+| `PreCompact` | `pre-compact.js` | Snapshot + pitfall detection. If `/compact` is manual AND tree is dirty AND `.claude/docs/` exists → blocks with instructions to run a docs-sync routing pass first. Bypass: `touch .claude/.docs-sync-skip`. |
+| `Stop` / `SessionEnd` | `session-end.js` | Final session snapshot, prune `sessions/*-session.md` to newest 30. |
 
-1. Asks profile (`fullstack-web` / `backend-only` / `library` / `mobile`),
-   project name, short tagline, stack details.
-2. Renders `templates/<profile>/` into the project root + `.claude/docs/`,
-   substituting `{{PROJECT_NAME}}`, `{{STACK_FRONTEND}}`,
-   `{{STACK_BACKEND}}`, `{{STACK_DB}}`, `{{STACK_DEPLOY}}`,
-   `{{CURRENT_DATE}}`, etc.
-3. Copies shared templates from `_common/` regardless of profile:
-   - `code-standards.md` → `.claude/docs/code-standards.md`
-   - ADR template + index → `.claude/docs/adr/`
-   - PRD template + index → `.claude/docs/prd/`
-4. Merges `.claude/settings.json` non-destructively with
-   profile-appropriate hooks (deny-`.env`-edit, UI / backend edit
-   reminders, etc).
-5. Appends `.claude/.docs-sync-skip`, `.claude/reports/`,
-   `.claude/prototypes/`, `.claude/plans/`, `.claude/worktrees/` to
-   `.gitignore`.
-6. Prints a summary + next steps.
+State lives in:
 
-After: you have a full scaffold ready to fill in. The PreCompact hook
-from the plugin now protects this project.
+- `sessions/<date>-<id>-{session,compact,checkpoint}.md` — what happened.
+- `sessions/project-index.md` — auto-maintained index of session files by project.
+- `learned/auto-pitfall-YYYYMMDD.md` — patterns the hooks detected (retry ≥5×, error-then-fix, user-correction).
+- `state/checkpoint.json`, `state/memory-sync.json`, `state/handoff-read.json` — runtime state, gitignored.
 
-### `/docs-sync` (session-end audit)
+## What you write yourself
 
-Run in a project that already has `.claude/docs/`. Workflow:
+The hooks capture what happens; the docs framework is where you (and
+the assistant) curate the durable knowledge. Three files do the most
+work:
 
-1. **Reflect** — scans `git status`, `git diff --stat HEAD`, and the
-   conversation for: code changes, new decisions, bugs, new
-   entities/endpoints/fields, gotchas, deprecated features, migrations.
-2. **Map** — uses the project's `.claude/docs/processes.md` (specifically
-   the *Documentation Maintenance Rule* table) to decide which file each
-   learning belongs in. Falls back to a sensible default if `processes.md`
-   is missing.
-3. **Audit** — checks existing docs for: stale point-in-time counts,
-   duplicated rules across files, broken cross-references, orphaned
-   ADRs, code-derivable content that should be deleted, MEMORY.md index
-   drift, CLAUDE.md length budget.
-4. **Propose** — prints a compact diff plan grouped by target file.
-5. **Apply** — writes only the approved edits. Never commits (your
-   SRE / CI owns commits).
+1. **`CLAUDE.md`** — under 250 lines. Critical Rules, architectural
+   decisions, pointers into `.claude/docs/`. Open this first.
+2. **`.claude/docs/processes.md`** — Documentation Maintenance Rule
+   table (where each kind of learning goes), Definition of Done, two-mode
+   dev process. The assistant reads this to route session learnings into
+   the right docs.
+3. **`.claude/docs/code-standards.md`** — 10 sections of opinionated
+   defaults (project cleanliness, modularity, atomicity, reusability vs
+   premature abstraction, naming, error handling, comments, TDD,
+   refactor discipline, anti-overengineering). Trim what your team
+   doesn't agree with.
 
-Modes: `/docs-sync` (full), `/docs-sync dry-run`, `/docs-sync quick`
-(capture only, skip audit), `/docs-sync audit` (audit only).
+## Profiles
 
-### PreCompact hook
-
-Fires before every `/compact`. Logic:
-
-- If `.claude/.docs-sync-skip` marker exists → remove marker, allow compact.
-- If `.claude/docs/` doesn't exist → allow compact (framework not
-  installed here, don't interfere).
-- If `git status --porcelain` is empty → allow compact.
-- Otherwise → block compact with exit 2, print instructions to run
-  `/docs-sync` first.
-
-Escape hatch: `touch .claude/.docs-sync-skip && /compact` — one-shot
-skip for cases where the dirty tree is unrelated WIP.
-
-## What every project gets
-
-| File | Purpose |
+| Profile | Adds (on top of the `_common` baseline) |
 |---|---|
-| `CLAUDE.md` | Critical Rules + Documentation Maintenance mini-table + "where to look" table + `@`-eager imports of the docs |
-| `BUGS.md` | Open / Fixed sections, ID format, severity scale, templated repro / root-cause / lesson / regression-TC blocks |
-| `TEST_CASES.md` | TC format with priority (P0/P1/P2), type (Positive/Negative/Edge), status (`[AUTO-BE]`/`[AUTO-FE]`/`[MANUAL]`/`[NOT_COVERED]`/`[OBSOLETE]`) |
-| `ROADMAP.md` | Current state, waves, parallel tracks, WONTFIX |
-| `.claude/docs/processes.md` | **How we work** — Context Maintenance Rule, Documentation Maintenance Rule table, Definition of Done checklist, TC registry rules, two-mode workflow (small=direct, large=BA→UX+TL→DB+BE+FE→QA→Sec+TL→Acceptance→SRE) |
-| `.claude/docs/code-standards.md` | **What we write** — project cleanliness, modularity, atomicity, reusability vs premature abstraction, naming, error handling, comments, TDD discipline, refactor discipline, anti-overengineering |
-| `.claude/docs/changelog.md` | Cross-cutting behaviour-affecting changes |
-| `.claude/docs/adr/` | Architecture Decision Records — template + README + index |
-| `.claude/docs/prd/` | Product Requirements Docs — template + README |
-| `.claude/settings.json` | Profile-appropriate hooks (merged non-destructively) |
-
-## Profile-specific additions
-
-| Profile | Adds (under `.claude/docs/`) |
-|---|---|
-| `fullstack-web` | `architecture`, `entities`, `frontend-gotchas`, `backend`, `ui-design-system`, `deploy`, `domain/glossary`, `domain/workflows` + `test-cases/` skeleton |
-| `backend-only` | `architecture`, `entities`, `backend`, `deploy`, `domain/glossary` + `test-cases/` skeleton |
+| `fullstack-web` (default) | `architecture`, `entities`, `frontend-gotchas`, `backend`, `ui-design-system`, `deploy`, `domain/glossary`, `domain/workflows` |
+| `backend-only` | `architecture`, `entities`, `backend`, `deploy`, `domain/glossary` |
 | `library` | `architecture`, `api-surface`, `release` |
-| `mobile` | `architecture`, `entities`, `frontend-gotchas` (platform quirks), `backend` (if any), `ui-design-system`, `release`, `domain/glossary` + `test-cases/` skeleton |
+| `mobile` | `architecture`, `entities`, `frontend-gotchas` (platform quirks), `backend` (if any), `ui-design-system`, `release`, `domain/glossary`, `domain/workflows` |
+
+Switching profile after install means a follow-up `--force --profile <other>`
+run + manual cleanup of stale docs the new profile doesn't include. There's
+no migration helper.
 
 ## Philosophy
 
-- **Docs live close to code.** `.claude/docs/*` is checked in, edited
+- **Docs live close to code.** `.claude/docs/*` is in git, edited
   alongside features, reviewed in PRs.
-- **Single home per rule.** Duplication kills trust. `/docs-sync`
-  enforces it.
-- **No point-in-time counts.** Describe the shape, not the snapshot —
-  it drifts. (No "we have 5 tables" — the count is in the code.)
+- **Single home per rule.** Duplication kills trust. The Documentation
+  Maintenance Rule in `processes.md` enforces it.
+- **No point-in-time counts.** Describe the shape, not the snapshot.
 - **Code-derivable ≠ doc.** If `grep` answers it, don't write it down.
-- **Memory ≠ project docs.** Facts about the *user* belong in
-  `~/.claude/projects/<project>/memory/`, NOT in `.claude/docs/`. Facts
-  about the *project* belong here.
-- **Additive only.** Fields and rules are marked dormant, not deleted.
-  Preserves rollback and traceability.
+- **Memory ≠ project docs.** User-level preferences belong in
+  `~/.claude/projects/<project>/memory/`. Project-level facts belong in
+  this repo's `.claude/`.
 - **Process and code-style live separately.** `processes.md` is about
   *how we work*; `code-standards.md` is about *what we write*. Mixing
-  them rots both — a teammate skimming for "how do I write a test"
-  shouldn't have to scroll past "how does PR review work."
-- **Ship opinions, not blanks.** The templates have real defaults
-  (modularity, TDD, anti-overengineering). They're meant to be amended,
-  not stared at — your first PR after `/init-docs` should trim the
-  rules you don't agree with.
+  them rots both.
+- **Ship opinions, not blanks.** The templates have real defaults.
+  Trim what you don't agree with — but you don't start from a blank
+  file.
+- **No plugin, no slash commands, no Python.** Everything is in your
+  repo, runs through Claude Code's native hooks, requires only Node 18+.
+
+## Customising
+
+- **`.claude/hooks/post-tool-use.js`** — the file most worth editing.
+  Add per-path nudges so the assistant remembers adjacent checks ("DB
+  schema changed → run a migration", "infra changed → deploy steps").
+- **`.claude/docs/processes.md`** — adjust the Documentation Maintenance
+  Rule table to your file layout.
+- **`.claude/docs/code-standards.md`** — trim or amend the 10 sections
+  to match what your team actually agrees on.
+- **`.claude/settings.json`** — add more hooks if you want (linter,
+  formatter on save, etc.) without touching this framework.
+
+## Migration from 0.x
+
+If you previously ran `/plugin install claude-docs-mgmt@...`:
+
+1. `/plugin uninstall claude-docs-mgmt` in Claude Code.
+2. Clone this repo somewhere (`~/code/claude-docs-mgmt`).
+3. Run `node install.js --target /path/to/your-project --force` — overwrites
+   the old templates with the new hook-driven framework.
+4. Restart Claude Code.
+
+The `processes.md`, `code-standards.md`, and root-level docs (`CLAUDE.md`,
+`BUGS.md`, `TEST_CASES.md`, `ROADMAP.md`) are compatible with what 0.x
+created — the install will just refresh them. New files: `.claude/hooks/*`,
+`.claude/memory/*`, `.claude/sessions/`, `.claude/learned/`,
+`.claude/state/`, `.claude/settings.json`.
 
 ## License
 

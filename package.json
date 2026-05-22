@@ -1,0 +1,28 @@
+{
+  "name": "claude-docs-mgmt",
+  "version": "1.0.0",
+  "description": "Set-and-forget docs + memory framework for Claude Code projects. Hook-driven, zero deps, copies into your repo via install.js.",
+  "bin": {
+    "claude-docs-mgmt": "./install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "Egor Shakala",
+    "email": "e.a.shakala@gmail.com"
+  },
+  "homepage": "https://github.com/yeshcod/claude-docs-mgmt",
+  "repository": "https://github.com/yeshcod/claude-docs-mgmt.git",
+  "keywords": [
+    "claude-code",
+    "documentation",
+    "code-standards",
+    "best-practices",
+    "tdd",
+    "memory",
+    "hooks",
+    "project-template"
+  ]
+}

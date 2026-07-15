@@ -246,9 +246,22 @@ function main() {
     process.stdout.write(`     Deploy: {{PROD_HOST}}, {{DB_URI}}, {{TEST_CMD}}\n`);
     process.stdout.write(`     Dev/QA: {{DEV_LOGIN}}, {{DEV_PASSWORD}}, {{DESIGN_RULES}}\n`);
     process.stdout.write(`  4. Review .claude/agents/sre.md before your first deploy — it owns commit/push/deploy.\n`);
-    process.stdout.write(`  5. Customise .claude/hooks/post-tool-use.js with per-path nudges for your project layout.\n`);
-    process.stdout.write(`  6. Restart Claude Code so hooks, agents, and skills pick up.\n`);
-    process.stdout.write(`  7. Commit: git add -A && git commit -m "docs: bootstrap claude-docs-mgmt framework (${args.profile})"\n`);
+    process.stdout.write(`  5. ACTIVE GUARD — read this one, it changes what Claude Code can do:\n`);
+    process.stdout.write(`     .claude/hooks/delegation-guard.js blocks git commit, git push, ssh, scp,\n`);
+    process.stdout.write(`     rsync and pm2 from Claude Code's MAIN LOOP. Only the \`sre\` agent may run\n`);
+    process.stdout.write(`     them — which is what .claude/docs/processes.md + agents/sre.md already\n`);
+    process.stdout.write(`     mandate. If Claude refuses to commit for you, THIS is why: ask it to\n`);
+    process.stdout.write(`     delegate via the Agent tool with subagent_type=sre.\n`);
+    process.stdout.write(`       Tune:    BLOCKED_COMMANDS at the top of .claude/hooks/delegation-guard.js\n`);
+    process.stdout.write(`       Disable: remove the delegation-guard block from .claude/settings.json\n`);
+    process.stdout.write(`       Details: README "Writing hooks" → "The delegation guard"\n`);
+    process.stdout.write(`     (Your own shell is unaffected — hooks only apply inside Claude Code.)\n`);
+    process.stdout.write(`  6. Customise .claude/hooks/post-tool-use.js with per-path nudges for your layout.\n`);
+    process.stdout.write(`     Nudges must be emitted as additionalContext on stdout — stderr never reaches\n`);
+    process.stdout.write(`     the model. See README "Writing hooks" before adding one.\n`);
+    process.stdout.write(`  7. Restart Claude Code so hooks, agents, and skills pick up.\n`);
+    process.stdout.write(`  8. Commit — run this yourself in a terminal (per step 5, Claude can't):\n`);
+    process.stdout.write(`       git add -A && git commit -m "docs: bootstrap claude-docs-mgmt framework (${args.profile})"\n`);
   }
 }
 

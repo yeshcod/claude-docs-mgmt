@@ -28,6 +28,24 @@ Three layers, one install:
 > `/code-review`), and the 11 agents they orchestrate ship with them.
 > Additive and non-breaking: existing installs are untouched until you
 > re-run the installer, which skips existing files unless `--force`.
+>
+> **1.2.0 makes "the SRE agent owns commits and deploys" enforceable.**
+> Until now that rule was prose, and prose does not stop a `git commit`.
+> [`delegation-guard.js`](#the-delegation-guard) blocks `git commit`,
+> `git push`, `ssh`, `scp`, `rsync` and `pm2` everywhere except the `sre`
+> agent — and it **ships registered and enabled**, because a guard you
+> have to switch on is one more thing to forget. It is a *workflow* guard
+> and [fails open](#the-delegation-guard) by design.
+>
+> *Upgrading from 1.1.0?* **Nothing changes for you until you opt in.**
+> Re-running the installer copies the guard file in, but skips your
+> existing `settings.json` — so the guard is never registered and stays
+> **inert**. To actually enable it, add the one `PreToolUse` block from
+> [Disabling](#the-delegation-guard) (read in reverse) to your
+> `settings.json` by hand. Only fresh installs get it switched on.
+>
+> New to hooks — or wondering why a hook of yours never fires? The new
+> [Writing hooks](#writing-hooks) section is the part worth reading.
 
 ## What you get
 
@@ -53,12 +71,13 @@ After running `install.js` against your project:
     │   ├── refactor/            # safe refactor pipeline
     │   ├── code-review/         # full-stack review → refactoring plan
     │   └── docs-sync/           # route session learnings into the right docs
-    ├── hooks/                   # 7 Node 18+ scripts, zero deps
+    ├── hooks/                   # 8 Node 18+ scripts, zero deps
     │   ├── _shared.js           # parseTranscript, detectPitfalls, etc.
     │   ├── session-start.js     # inject context, recurring-pitfall alerts, reflect reminder
     │   ├── session-end.js       # final snapshot, prune to newest 30
     │   ├── pre-compact.js       # snapshot + pitfall detect + dirty-tree gate
     │   ├── pre-tool-use.js      # block secret-file edits + catastrophic rm
+    │   ├── delegation-guard.js  # ★ enforce "sre owns commit/deploy" (tune or remove)
     │   ├── post-tool-use.js     # project-specific nudges (you customise)
     │   └── user-prompt-submit.js # mid-session checkpoint every 20 msgs + memory-sync
     ├── docs/                    # the documentation framework
@@ -114,7 +133,8 @@ part you *do* type, are covered [below](#skills).)
 | `SessionStart` | `session-start.js` | Injects `memory/current.md`, pending handoffs, the newest session snapshot, recent pitfalls, recurring-pitfall alerts ("you hit this 3+ days running — promote to a CLAUDE.md rule"), reflect reminder, docs-framework presence. |
 | `UserPromptSubmit` | `user-prompt-submit.js` | Every 20 messages: mid-session checkpoint into `sessions/`. Also surfaces `MEMORY.md` diffs and new handoffs to the assistant. |
 | `PreToolUse` (Edit/Write/Bash) | `pre-tool-use.js` | Blocks edits to true secret files — dotenv, private keys (`*.pem`, `*.key`, `*.p12`, `id_rsa`), and secret *data* files (`credentials.yml`, `secrets.json`). Extension-aware, so real source like `PasswordModal.jsx` or `updatePassword.js` stays editable. Blocks catastrophic `rm -rf /`, `rm -rf ~`, `rm -rf /etc` — narrowly, no false positives on `rm -rf /tmp/x`. |
-| `PostToolUse` (Edit/Write) | `post-tool-use.js` | **You customise this file** with per-path nudges for your project layout. The default is silent. |
+| `PreToolUse` (Bash) | `delegation-guard.js` | **Enforces `processes.md`: the `sre` agent owns commit + deploy.** Blocks `git commit`, `git push`, `ssh`, `scp`, `rsync`, `pm2` unless the caller is the `sre` subagent. Matches at command position, so `grep ssh notes.txt` is fine. [Tune or remove it →](#the-delegation-guard) |
+| `PostToolUse` (Edit/Write) | `post-tool-use.js` | **You customise this file** with per-path nudges for your project layout. Ships one live example (`.claude/` config edited → restart to pick up). [How to write one that actually works →](#writing-hooks) |
 | `PreCompact` | `pre-compact.js` | Snapshot + pitfall detection. If `/compact` is manual AND tree is dirty AND `.claude/docs/` exists → blocks with instructions to run a docs-sync routing pass first. Bypass: `touch .claude/.docs-sync-skip`. |
 | `Stop` / `SessionEnd` | `session-end.js` | Final session snapshot, prune `sessions/*-session.md` to newest 30. |
 
@@ -124,6 +144,171 @@ State lives in:
 - `sessions/project-index.md` — auto-maintained index of session files by project.
 - `learned/auto-pitfall-YYYYMMDD.md` — patterns the hooks detected (retry ≥5×, error-then-fix, user-correction).
 - `state/checkpoint.json`, `state/memory-sync.json`, `state/handoff-read.json` — runtime state, gitignored.
+
+## Writing hooks
+
+Everything below was learned the hard way: this framework's own hooks were
+**placebo for a long time** — registered, running, exiting 0, doing nothing.
+They were written against environment variables that Claude Code does not
+set. If your hook "silently does nothing", the answer is almost certainly
+in this section.
+
+### 1. The payload arrives on stdin, as JSON
+
+There is **no `$CLAUDE_FILE_PATH`, no `$CLAUDE_TOOL_INPUT`, no
+`$CLAUDE_COMMAND`.** A hook written against those reads an empty string,
+matches nothing, and exits 0 — it looks like it works and never fires.
+That single mistake is what made our nine hooks placebo.
+
+The **only** environment variables Claude Code sets are:
+
+| Var | Meaning |
+|---|---|
+| `CLAUDE_PROJECT_DIR` | Absolute path to the project root. The one you actually want. |
+| `CLAUDE_PLUGIN_ROOT` | Plugin install dir (plugin-provided hooks only). |
+| `CLAUDE_PLUGIN_DATA` | Plugin data dir. |
+| `CLAUDE_EFFORT` | Current reasoning-effort setting. |
+| `CLAUDE_CODE_REMOTE` | Set when running remotely. |
+| `CLAUDE_CODE_BRIDGE_SESSION_ID` | Bridge session id. |
+
+Everything else comes in on **stdin**. Read and parse it:
+
+```js
+const { readJsonStdin } = require('./_shared');   // handles the parse + fail-open
+const input = await readJsonStdin();
+const cmd = input.tool_input?.command;            // ← this is where the data lives
+```
+
+Observed keys on a **PreToolUse / Bash** payload:
+
+```
+session_id, transcript_path, cwd, prompt_id, permission_mode,
+agent_id, agent_type, effort, hook_event_name,
+tool_name, tool_input, tool_use_id
+```
+
+**PostToolUse** adds `tool_response` and `duration_ms`.
+
+`tool_input` is the tool's own argument object — `{command}` for Bash,
+`{file_path, old_string, new_string}` for Edit, and so on.
+
+> Debugging tip: if you're unsure of a payload's shape, dump it —
+> `require('fs').appendFileSync('/tmp/hook.json', JSON.stringify(input) + '\n')`
+> — then trigger the tool once and read the file. Ten seconds, no guessing.
+
+### 2. Blocking requires `exit 2`
+
+| Exit code | Effect |
+|---|---|
+| `0` | Allow. stdout may carry a JSON envelope (see below). |
+| `1` | **Non-blocking error.** Prints, then runs the command anyway. |
+| `2` | **Block.** stderr is fed back to the model so it can self-correct. |
+
+`exit 1` is the trap here: it looks like enforcement and isn't. If you mean
+"stop", you must `exit 2` — and the stderr text should say what to do
+instead, because the model reads it.
+
+### 3. PostToolUse: stderr never reaches the model
+
+A PostToolUse hook that writes to stderr and exits 0 reaches the
+**transcript** but **never enters the model's context**. You can watch the
+text appear in your terminal and still have the assistant behave as though
+nothing was said — because, to the assistant, nothing was.
+
+To actually nudge the model, print a JSON envelope on **stdout**:
+
+```js
+process.stdout.write(JSON.stringify({
+  hookSpecificOutput: {
+    hookEventName: 'PostToolUse',
+    additionalContext: '- schema changed — run migrations + update entities.md.',
+  },
+}) + '\n');
+process.exit(0);
+```
+
+`post-tool-use.js` ships an `emitContext()` helper that does exactly this —
+use it rather than reaching for `console.error`. This matters because that
+file is the one the framework explicitly invites you to customise; the
+invitation used to lead straight into this trap.
+
+### 4. Telling main-loop calls from subagent calls
+
+The payload distinguishes who is calling:
+
+| Key | Main loop | Subagent |
+|---|---|---|
+| `agent_id` | `null` | the agent's id |
+| `agent_type` | `null` / absent | the agent's name, e.g. `"sre"` |
+
+So `input.agent_type === 'sre'` is a reliable "this is the SRE agent"
+check, and a missing `agent_type` means the orchestrator itself. That one
+field is what makes role-based enforcement possible — it's how the
+delegation guard exempts `sre` while blocking everyone else.
+
+### The delegation guard
+
+`processes.md` and `sre.md` both say the SRE agent owns commit, push, and
+deploy, and that the orchestrator never commits. `delegation-guard.js` is
+what makes that true instead of aspirational — **it ships registered and
+enabled.**
+
+**What it blocks** (only outside the `sre` agent):
+
+| Default | Why |
+|---|---|
+| `git commit`, `git push` | The rule the framework already states. |
+| `ssh`, `scp`, `rsync` | How a deploy reaches a server. |
+| `pm2` | Stack-specific default — process management. |
+
+Matching is at **command position**, so real work isn't disrupted:
+
+| Command | Result |
+|---|---|
+| `git commit -m "x"` | blocked |
+| `cd /x && git push` | blocked |
+| `git -C /path commit` | blocked (leading flags handled) |
+| `$(ssh host)`, `sudo pm2 restart` | blocked |
+| `grep ssh notes.txt` | **allowed** |
+| `echo 'git push'` | **allowed** |
+| `cat ~/.ssh/config` | **allowed** |
+
+**When it blocks**, the model is told to delegate via the Agent tool with
+`subagent_type=sre` — so in practice the pipeline routes itself rather than
+dead-ending.
+
+**Tuning** — edit the `BLOCKED_COMMANDS` array at the top of
+`.claude/hooks/delegation-guard.js`. `docker`, `kubectl`, `fly`, `vercel`
+and `terraform` are listed there, commented out. Note that `docker` is also
+an everyday *local-dev* command (`docker ps`, `compose up`) — enabling it
+blocks more than deploys.
+
+**Disabling** — delete the one block from `.claude/settings.json`:
+
+```json
+{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/delegation-guard.js\"" }] }
+```
+
+...or delete the file. Nothing else depends on it.
+
+**It fails open, by design.** A malformed payload, a parse failure, a
+non-Bash tool, an internal error — all exit 0 (allow). This is a *workflow*
+guard, not a security boundary: a bug in it must never be able to wedge a
+session. The actual security layer is `pre-tool-use.js` (secret files,
+catastrophic `rm -rf`), which is separate and unaffected.
+
+**Known limitation (accepted, fails safe):** a backtick counts as a
+command-position opener — it has to, or `` `ssh host` `` would slip
+through. The cost is that *prose* containing a backticked blocked command
+inside a Bash argument gets blocked too:
+
+```bash
+echo "next step: run `git push` to ship"   # ← blocked, though it's just text
+```
+
+Write that text with the Write tool instead of passing it as a Bash
+argument. The guard errs toward blocking, never toward missing — which is
+the right side to err on for a guard you can't see working.
 
 ## Agent team
 
@@ -248,6 +433,13 @@ include. There's no migration helper.
 - **`.claude/hooks/post-tool-use.js`** — the file most worth editing.
   Add per-path nudges so the assistant remembers adjacent checks ("DB
   schema changed → run a migration", "infra changed → deploy steps").
+  Read [Writing hooks](#writing-hooks) first — a nudge on stderr never
+  reaches the model; it has to go out as `additionalContext` on stdout.
+- **`.claude/hooks/delegation-guard.js`** — ships **enabled**: only the
+  `sre` agent may run `git commit` / `git push` / `ssh` / `scp` / `rsync` /
+  `pm2`. Tune `BLOCKED_COMMANDS` at the top of the file, or remove the one
+  block from `settings.json` to switch it off. See
+  [The delegation guard](#the-delegation-guard).
 - **`.claude/docs/processes.md`** — adjust the Documentation Maintenance
   Rule table to your file layout.
 - **`.claude/docs/code-standards.md`** — trim or amend the 10 sections

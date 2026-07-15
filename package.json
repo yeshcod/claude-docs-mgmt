@@ -1,6 +1,6 @@
 {
   "name": "claude-docs-mgmt",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Set-and-forget docs + memory framework for Claude Code projects. Vendored agents + skills + hooks, zero deps, copies into your repo via install.js.",
   "bin": {
     "claude-docs-mgmt": "./install.js"

@@ -57,10 +57,11 @@ function isAllowed(p) {
     // Bash guard
     if (tool === 'Bash') {
       const cmd = input.tool_input?.command || '';
-      if (/\bgit\s+(commit|push)\b/.test(cmd) && process.env.CONTENT_OPS_ALLOW_GIT !== '1') {
-        // Per feedback-auto-commit-on-slice: commits are OK at slice boundaries.
-        // We don't block commits — just warn on force pushes / pushes to non-main if needed.
-      }
+      // Commit/push policy is NOT here: delegation-guard.js (a separate
+      // PreToolUse/Bash hook) blocks git commit / git push / ssh / scp /
+      // rsync / pm2 outside the `sre` agent. This file is the security
+      // layer — secret files and catastrophic rm. Keep the two separate:
+      // this one must stay conservative, that one is meant to be tuned.
       if (/\bgit\s+push\b.*(\s-f\b|\s--force\b)/.test(cmd)) {
         process.stderr.write(`note: detected force push. Ensure user authorised this.\n`);
       }

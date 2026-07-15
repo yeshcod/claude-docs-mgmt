@@ -1,7 +1,7 @@
 {
   "name": "claude-docs-mgmt",
-  "version": "1.0.0",
-  "description": "Set-and-forget docs + memory framework for Claude Code projects. Hook-driven, zero deps, copies into your repo via install.js.",
+  "version": "1.1.0",
+  "description": "Set-and-forget docs + memory framework for Claude Code projects. Vendored agents + skills + hooks, zero deps, copies into your repo via install.js.",
   "bin": {
     "claude-docs-mgmt": "./install.js"
   },
@@ -23,6 +23,9 @@
     "tdd",
     "memory",
     "hooks",
+    "agents",
+    "subagents",
+    "pipeline",
     "project-template"
   ]
 }

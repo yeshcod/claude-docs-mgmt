@@ -4,7 +4,28 @@
 const path = require('path');
 const { readJsonStdin, debugLog } = require('./_shared');
 
-const SECRET_FILE_RE = /(^|\/)(\.env(\..*)?|.*credentials.*|.*\.secret.*|.*password.*|.*\.pem|.*\.key)$/i;
+// Match TRUE secret files only — not legitimate source files whose basename
+// merely contains a word like "password"/"credentials"/"secret" (e.g.
+// updatePassword.js, updateProfilePassword.js, PasswordModal.jsx, secrets.test.js).
+// Blocks: dotenv files, private-key material (.pem/.key/.p12/.pfx/id_rsa[...]),
+// and secret-data files (credentials/secret(s)/password) ONLY when the extension
+// is a data/config format (json/yml/yaml/txt/ini/conf/env) or there is no
+// extension — never when it's a code extension (js/jsx/ts/tsx/mjs/cjs/vue/...).
+const SECRET_DATA_EXT = '(?:json|ya?ml|txt|ini|conf|cfg|env|pem|key|cert|crt)';
+const SECRET_FILE_RE = new RegExp(
+  '(^|/)(' +
+    // dotenv: .env, .env.production, etc.
+    '\\.env(\\..*)?' +
+    // private-key / cert material by extension
+    '|.*\\.(?:pem|key|p12|pfx|asc)' +
+    // ssh private keys
+    '|id_rsa(\\..*)?|id_ed25519(\\..*)?|id_ecdsa(\\..*)?' +
+    // secret-data files: word-bearing name BUT only with a data extension or none
+    `|.*(?:credentials|secrets?|password)[^/]*\\.${SECRET_DATA_EXT}` +
+    '|.*(?:credentials|secrets?|password)[^/.]*' + // extension-less (e.g. ".credentials")
+    ')$',
+  'i'
+);
 const NOISY_DOC_RE = /^(README|CHANGELOG|TODO)\.md$/i;
 const ALLOW_PATHS = [/\/\.env\.example$/, /\/infra\/\.env\.example$/];
 

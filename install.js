@@ -2,7 +2,8 @@
 /**
  * claude-docs-mgmt installer
  *
- * Copies the framework files into a target project. Pure Node, zero deps.
+ * Copies the framework files (docs, hooks, skills) + the agent team into a
+ * target project. Pure Node, zero deps.
  *
  * Usage:
  *   node install.js                                  # default: profile=fullstack-web, target=cwd
@@ -25,6 +26,21 @@ const { execSync } = require('child_process');
 const ROOT = __dirname;
 const VALID_PROFILES = ['fullstack-web', 'backend-only', 'library', 'mobile'];
 
+// The agent team. Single source in framework/_agents/<name>.md — NOT duplicated
+// per profile; the manifest below just selects which ones a profile installs.
+// These are what make the processes.md pipeline (BA → UX + tech-lead → …)
+// actually deliverable rather than aspirational prose.
+const UNIVERSAL_AGENTS = ['business-analyst', 'tech-lead', 'security-reviewer', 'qa-automation', 'sre'];
+const UI_AGENTS = ['frontend-engineer', 'ux-designer', 'design-system-guard', 'qa-manual'];
+const SERVER_AGENTS = ['backend-engineer', 'db-architect'];
+
+const AGENTS_BY_PROFILE = {
+  'fullstack-web': [...UNIVERSAL_AGENTS, ...SERVER_AGENTS, ...UI_AGENTS],
+  'backend-only': [...UNIVERSAL_AGENTS, ...SERVER_AGENTS],
+  'mobile': [...UNIVERSAL_AGENTS, ...SERVER_AGENTS, ...UI_AGENTS],
+  'library': [...UNIVERSAL_AGENTS],
+};
+
 function parseArgs(argv) {
   const out = { profile: 'fullstack-web', target: process.cwd(), force: false, dryRun: false, projectName: null, help: false };
   for (let i = 0; i < argv.length; i++) {
@@ -41,7 +57,14 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  process.stdout.write(`claude-docs-mgmt installer\n\n${require('fs').readFileSync(__filename, 'utf8').split('\n').slice(2, 18).map(l => l.replace(/^ \* ?/, '')).join('\n')}\n`);
+  // Parse the leading block comment rather than slicing magic line numbers —
+  // editing the banner used to silently shift the slice and print a stray "*/".
+  const banner = (fs.readFileSync(__filename, 'utf8').match(/\/\*\*([\s\S]*?)\*\//)?.[1] ?? '')
+    .split('\n')
+    .map((l) => l.replace(/^\s*\* ?/, ''))
+    .join('\n')
+    .trim();
+  process.stdout.write(`${banner}\n`);
 }
 
 function detectProjectName(targetDir) {
@@ -109,6 +132,23 @@ function copyTree({ srcRoot, destRoot, projectName, force, dryRun }) {
   return results;
 }
 
+// Copies only the agents the profile selects, from the single _agents source.
+// A missing source file is reported (not fatal) so a partial checkout surfaces
+// loudly instead of silently installing an incomplete team.
+function copyAgents({ profile, destRoot, projectName, force, dryRun }) {
+  const srcRoot = path.join(ROOT, 'framework/_agents');
+  const results = [];
+  for (const name of AGENTS_BY_PROFILE[profile] ?? []) {
+    const src = path.join(srcRoot, `${name}.md`);
+    if (!fs.existsSync(src)) {
+      results.push({ status: 'missing-src', dest: src });
+      continue;
+    }
+    results.push(copyFile({ src, dest: path.join(destRoot, `${name}.md`), projectName, force, dryRun }));
+  }
+  return results;
+}
+
 function appendGitignore({ snippetPath, target, dryRun }) {
   if (!fs.existsSync(snippetPath)) return { status: 'no-snippet' };
   const gi = path.join(target, '.gitignore');
@@ -166,18 +206,32 @@ function main() {
     projectName, force: args.force, dryRun: args.dryRun,
   });
 
-  // 4. Append to .gitignore
+  // 4. Copy the profile's agent team → <target>/.claude/agents
+  const r4 = copyAgents({
+    profile: args.profile,
+    destRoot: path.join(args.target, '.claude/agents'),
+    projectName, force: args.force, dryRun: args.dryRun,
+  });
+
+  // 5. Append to .gitignore
   const gi = appendGitignore({
     snippetPath: path.join(ROOT, 'framework/_common/gitignore.snippet'),
     target: args.target,
     dryRun: args.dryRun,
   });
 
-  const all = [...r1, ...r2, ...r3];
+  const all = [...r1, ...r2, ...r3, ...r4];
   const counts = all.reduce((acc, x) => ((acc[x.status] = (acc[x.status] || 0) + 1), acc), {});
   process.stdout.write(`\nFile summary:\n`);
   for (const k of Object.keys(counts).sort()) process.stdout.write(`  ${k.padEnd(12)} ${counts[k]}\n`);
-  process.stdout.write(`\n.gitignore: ${gi.status}\n`);
+  process.stdout.write(`\nAgents (${args.profile}): ${(AGENTS_BY_PROFILE[args.profile] ?? []).length}\n`);
+  process.stdout.write(`.gitignore: ${gi.status}\n`);
+
+  const missing = r4.filter((x) => x.status === 'missing-src');
+  if (missing.length) {
+    process.stdout.write(`\nWARNING: ${missing.length} agent file(s) missing from framework/_agents — team is incomplete:\n`);
+    for (const m of missing) process.stdout.write(`  ${path.basename(m.dest)}\n`);
+  }
 
   if (args.dryRun) {
     process.stdout.write(`\n(dry-run — nothing was written)\n`);
@@ -185,10 +239,16 @@ function main() {
     process.stdout.write(`\nNext steps:\n`);
     process.stdout.write(`  1. Open ${args.target}/CLAUDE.md and fill the Critical Rules section.\n`);
     process.stdout.write(`  2. Skim .claude/docs/code-standards.md — trim the rules your team doesn't agree with.\n`);
-    process.stdout.write(`  3. Customise .claude/hooks/post-tool-use.js with per-path nudges for your project layout.\n`);
-    process.stdout.write(`  4. Grep for {{STACK_FRONTEND}}, {{STACK_BACKEND}}, etc. in .claude/docs/ and fill them in.\n`);
-    process.stdout.write(`  5. Restart Claude Code so hooks pick up.\n`);
-    process.stdout.write(`  6. Commit: git add -A && git commit -m "docs: bootstrap claude-docs-mgmt framework (${args.profile})"\n`);
+    process.stdout.write(`  3. Fill the placeholders — only {{PROJECT_NAME}}, {{CURRENT_DATE}}, {{YEAR}} were\n`);
+    process.stdout.write(`     auto-substituted. Grep .claude/ for the rest and fill them in:\n`);
+    process.stdout.write(`       grep -rIl '{{' .claude/ CLAUDE.md\n`);
+    process.stdout.write(`     Stack:  {{STACK_FRONTEND}}, {{STACK_BACKEND}}, {{DOMAIN_ENTITIES}}\n`);
+    process.stdout.write(`     Deploy: {{PROD_HOST}}, {{DB_URI}}, {{TEST_CMD}}\n`);
+    process.stdout.write(`     Dev/QA: {{DEV_LOGIN}}, {{DEV_PASSWORD}}, {{DESIGN_RULES}}\n`);
+    process.stdout.write(`  4. Review .claude/agents/sre.md before your first deploy — it owns commit/push/deploy.\n`);
+    process.stdout.write(`  5. Customise .claude/hooks/post-tool-use.js with per-path nudges for your project layout.\n`);
+    process.stdout.write(`  6. Restart Claude Code so hooks, agents, and skills pick up.\n`);
+    process.stdout.write(`  7. Commit: git add -A && git commit -m "docs: bootstrap claude-docs-mgmt framework (${args.profile})"\n`);
   }
 }
 
